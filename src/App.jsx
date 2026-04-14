@@ -77,11 +77,12 @@ const getSellInfo = (cols, sellPrices, qty) => {
   return { col, unitPrice: sellPrices[col], income: roundUp500(sellPrices[col] * qty) };
 };
 
-// REPOSICIÓN: rellena de derecha a izquierda respetando capacidad máxima
+// REPOSICIÓN: rellena de izquierda a derecha (primer hueco libre desde la izquierda)
+// Si no hay huecos disponibles en un tramo, no se repone (se salta).
 const replenish = (cols, caps, qty) => {
   const nc = [...cols];
   let rem = qty;
-  for (let c = 3; c >= 0 && rem > 0; c--) {
+  for (let c = 0; c < 4 && rem > 0; c++) {
     const space = caps[c] - nc[c];
     if (space > 0) { const add = Math.min(space, rem); nc[c] += add; rem -= add; }
   }
@@ -121,16 +122,16 @@ function buyLegal(state, mi, qty) {
 
 function buyContraband(state, mi, qty) {
   const port   = state.markets[mi].nation;
-  const ni     = nextIdx(mi);
-  const next   = state.markets[ni].nation;
+  const pi     = prevIdx(mi);                    // nación superior = la anterior
+  const prev   = state.markets[pi].nation;
   const prices = PRICES[state.side].contraband;
-  const { cost, bought, newCols } = doBuy(state.markets[ni].contraband, prices.buy, qty);
-  if (!bought) return addLog(state, `⚠️ Sin contrabando de ${next} en ${port}`);
+  const { cost, bought, newCols } = doBuy(state.markets[pi].contraband, prices.buy, qty);
+  if (!bought) return addLog(state, `⚠️ Sin contrabando de ${prev} en ${port}`);
   const markets = deepCopy(state.markets);
-  markets[ni].contraband = newCols;
+  markets[pi].contraband = newCols;
   return addLog(
     { ...state, doubloons: state.doubloons - cost, markets },
-    `🏴‍☠️ Comprado ${bought} ${GOODS[next]} (contra. ${next}) en ${port} — −${cost.toLocaleString()} doblones`
+    `🏴‍☠️ Comprado ${bought} ${GOODS[prev]} (contra. ${prev}) en ${port} — −${cost.toLocaleString()} doblones`
   );
 }
 
@@ -151,16 +152,17 @@ function sellLegal(state, mi, qty) {
 
 function sellContraband(state, mi, qty) {
   const port   = state.markets[mi].nation;
-  const ni     = nextIdx(mi);
-  const next   = state.markets[ni].nation;
+  const pi     = prevIdx(mi);                    // nación superior = la anterior
+  const prev   = state.markets[pi].nation;
   const prices = PRICES[state.side].contraband;
-  const { income, unitPrice } = getSellInfo(state.markets[ni].contraband, prices.sell, qty);
+  const { income, unitPrice } = getSellInfo(state.markets[pi].contraband, prices.sell, qty);
+  // Reposición: nación inferior de prevIdx(mi) = nextIdx(prevIdx(mi)) = mi
   const repAmt = Math.floor(qty / 2);
   const markets = deepCopy(state.markets);
-  if (repAmt > 0) markets[ni].contraband = replenish(markets[ni].contraband, CONTRA_CAPS, repAmt);
+  if (repAmt > 0) markets[mi].contraband = replenish(markets[mi].contraband, CONTRA_CAPS, repAmt);
   return addLog(
     { ...state, doubloons: state.doubloons + income, markets },
-    `🏴‍☠️ Vendido ${qty} ${GOODS[next]} contra. (${unitPrice.toLocaleString()}/u) en ${port} — +${income.toLocaleString()} doblones${repAmt ? ` | repuesto ${repAmt} → ${next}` : ""}`
+    `🏴‍☠️ Vendido ${qty} ${GOODS[prev]} contra. (${unitPrice.toLocaleString()}/u) en ${port} — +${income.toLocaleString()} doblones${repAmt ? ` | repuesto ${repAmt} → ${port}` : ""}`
   );
 }
 
@@ -389,9 +391,10 @@ function MarketCard({ market, mi, side, allMarkets, onAction }) {
   const [qty, setQty] = useState(1);
   const [bg, border]  = NATION_BG[market.nation];
   const prices        = PRICES[side];
-  const ni            = nextIdx(mi);
-  const nextMarket    = allMarkets[ni];
-  const contraGood    = GOODS[nextMarket.nation];
+  const pi            = prevIdx(mi);             // nación superior = anterior
+  const ni            = nextIdx(mi);             // nación inferior = siguiente
+  const prevMarket    = allMarkets[pi];
+  const contraGood    = GOODS[prevMarket.nation];
 
   return (
     <div className="card" style={{ border:`2px solid ${border}` }}>
@@ -401,7 +404,7 @@ function MarketCard({ market, mi, side, allMarkets, onAction }) {
           <span className="pos-badge">#{mi+1}</span>
         </div>
         <div className="card-sub">
-          Legal: {GOODS[market.nation]} · Contra.: {contraGood} (de {nextMarket.nation})
+          Legal: {GOODS[market.nation]} · Contra.: {contraGood} (de {prevMarket.nation})
         </div>
       </div>
       <div className="card-body">
@@ -417,7 +420,7 @@ function MarketCard({ market, mi, side, allMarkets, onAction }) {
         <MarketRow
           type="contraband"
           goodName={contraGood}
-          cols={nextMarket.contraband}
+          cols={prevMarket.contraband}
           caps={CONTRA_CAPS}
           sellPrices={prices.contraband.sell}
           buyPrices={prices.contraband.buy}
@@ -439,7 +442,7 @@ function MarketCard({ market, mi, side, allMarkets, onAction }) {
             <button className="ab ab-sc" onClick={() => onAction("sellContraband",mi, qty)}>⬆ Vend. Contra.</button>
           </div>
           <div className="contra-note">
-            Contra.: fila de {nextMarket.nation} · Repone legal → {allMarkets[ni].nation}
+            Contra.: fila de {prevMarket.nation} · Repone legal → {allMarkets[ni].nation}
           </div>
         </div>
       </div>
