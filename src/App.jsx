@@ -45,8 +45,8 @@ const shuffle = (arr) => {
   return a;
 };
 
-// Dado de 8 caras
-const d8 = () => Math.floor(Math.random() * 8) + 1;
+// Dado de 6 caras
+const d6 = () => Math.floor(Math.random() * 6) + 1;
 
 // La nación "siguiente" en el círculo = la que provee el contrabando
 const nextIdx = (i) => (i + 1) % 4;
@@ -172,7 +172,7 @@ const ACTIONS = { buyLegal, buyContraband, sellLegal, sellContraband };
 // ESTADO INICIAL
 // ══════════════════════════════════════════════════════════════════════════════
 
-const mkRolls = () => NATIONS.map(() => ({ legal: d8(), contraband: d8() }));
+const mkRolls = () => NATIONS.map(() => ({ legal: d6(), contraband: d6() }));
 
 const buildState = (order, rolls) => ({
   side: "A",
@@ -216,6 +216,9 @@ body { background:var(--dark); font-family:'Crimson Text',Georgia,serif; color:v
 .tbtn { font-family:'Cinzel',serif; font-size:11px; letter-spacing:1px; cursor:pointer; border-radius:7px; padding:8px 16px; transition:all .18s; }
 .tbtn-side  { background:linear-gradient(135deg,#28180a,#160e04); border:1.5px solid #8a6020; color:var(--gold); }
 .tbtn-side:hover  { background:linear-gradient(135deg,#44280e,#281606); box-shadow:0 0 12px rgba(190,130,30,.35); }
+.tbtn-undo { background:linear-gradient(135deg,#0a1828,#060e18); border:1.5px solid #305080; color:#70a0d0; }
+.tbtn-undo:hover { border-color:#5080b0; color:#90c0f0; }
+.tbtn-undo:disabled { opacity:.3; cursor:not-allowed; }
 .tbtn-reset { background:linear-gradient(135deg,#180808,#0c0404); border:1.5px solid #502020; color:#b07070; }
 .tbtn-reset:hover { border-color:#903030; color:#d09090; }
 .sbadge { background:var(--gold); color:#180800; border-radius:3px; padding:2px 9px; font-weight:700; font-size:12px; letter-spacing:1px; }
@@ -478,19 +481,19 @@ function DicePreview({ caps, roll, type }) {
 // ── Modal de inicio ───────────────────────────────────────────────────────────
 function DiceModal({ onConfirm }) {
   const [order, setOrder] = useState(() => shuffle(NATIONS));
-  const [rolls, setRolls] = useState(() => order.map(() => ({ legal: d8(), contraband: d8() })));
+  const [rolls, setRolls] = useState(() => order.map(() => ({ legal: d6(), contraband: d6() })));
 
   const reroll = () => {
     const newOrder = shuffle(NATIONS);
     setOrder(newOrder);
-    setRolls(newOrder.map(() => ({ legal: d8(), contraband: d8() })));
+    setRolls(newOrder.map(() => ({ legal: d6(), contraband: d6() })));
   };
 
   return (
     <div className="overlay">
       <div className="modal">
         <div className="modal-title">🎲 Nueva Partida</div>
-        <div className="modal-subtitle">Orden de naciones y tirada de dados</div>
+        <div className="modal-subtitle">Orden de naciones y tirada de dados (d6 por fila)</div>
 
         {/* Orden circular */}
         <div className="modal-order">
@@ -553,6 +556,7 @@ export default function App() {
     try { const s = localStorage.getItem("clmk6"); return s ? JSON.parse(s) : null; }
     catch { return null; }
   });
+  const [prevState, setPrevState] = useState(null);
   const [showModal, setShowModal] = useState(!state);
 
   useEffect(() => {
@@ -560,11 +564,20 @@ export default function App() {
   }, [state]);
 
   const handleConfirm = (order, rolls) => {
+    setPrevState(null);
     setState(buildState(order, rolls));
     setShowModal(false);
   };
 
-  const act  = (type, mi, qty) => setState(prev => ACTIONS[type](prev, mi, qty));
+  const act = (type, mi, qty) => setState(prev => {
+    setPrevState(prev);
+    return ACTIONS[type](prev, mi, qty);
+  });
+
+  const undo = () => {
+    if (prevState) { setState(prevState); setPrevState(null); }
+  };
+
   const flip = () => setState(s => ({ ...s, side: s.side === "A" ? "B" : "A" }));
 
   return (
@@ -589,6 +602,7 @@ export default function App() {
               Cara&nbsp;<span className="sbadge">{state.side}</span>
               &nbsp;→ Cambiar a {state.side === "A" ? "B" : "A"}
             </button>
+            <button className="tbtn tbtn-undo" onClick={undo} disabled={!prevState}>↩ Deshacer</button>
             <button className="tbtn tbtn-reset" onClick={() => setShowModal(true)}>🎲 Nueva Partida</button>
           </div>
           <div className="legend">
